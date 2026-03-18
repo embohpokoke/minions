@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+.env
+
+# Database (jangan commit DB production)
+*.db
+*.db.backup.*
+*.sqlite
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
