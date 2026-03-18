@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minions Command Center // GOD MODE v3.0</title>
+    <style>
+        :root {
+            --bg: #050505;
+            --panel: rgba(15, 15, 15, 0.95);
+            --border: #222;
+            --primary: #00ff41;
+            --warning: #ffbf00;
+            --error: #ff0033;
+            --text: #eee;
+            --dim: #555;
+            --accent: #003300;
+            --glow: 0 0 15px rgba(0, 255, 65, 0.2);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        
+        body { 
+            background: var(--bg); 
+            background-image: 
+                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            color: var(--text); padding: 15px; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; 
+        }
+        
+        header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-bottom: 1px solid var(--primary); padding-bottom: 10px; margin-bottom: 15px;
+            box-shadow: var(--glow); flex-wrap: wrap; gap: 10px;
+        }
+        .logo-container { display: flex; align-items: center; gap: 10px; }
+        h1 { color: var(--primary); text-transform: uppercase; letter-spacing: 2px; font-size: 1.1rem; text-shadow: var(--glow); }
+        
+        .nav-tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 1px solid #222; padding-bottom: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .tab-btn { 
+            background: #111; color: var(--dim); border: 1px solid #333; padding: 10px 15px; 
+            cursor: pointer; text-transform: uppercase; font-weight: bold; font-size: 0.7rem; white-space: nowrap; flex-shrink: 0;
+        }
+        .tab-btn.active { color: var(--primary); border-color: var(--primary); box-shadow: var(--glow); background: var(--accent); }
+
+        .tab-content { display: none; flex: 1; }
+        .tab-content.active { display: grid; }
+
+        /* Responsive Grid */
+        .grid { 
+            grid-template-columns: 320px 1fr 340px; 
+            grid-template-rows: 1fr 240px; 
+            gap: 15px; 
+        }
+
+        @media (max-width: 1100px) {
+            .grid {
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: auto auto auto;
+            }
+            .logs-panel { grid-column: 1 / -1; }
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+            h1 { font-size: 0.9rem; }
+            .logo-container svg { width: 30px; height: 30px; }
+            .panel { max-height: none; overflow-y: visible; }
+            .tab-content.active { display: flex; flex-direction: column; }
+        }
+
+        .panel { 
+            background: var(--panel); border: 1px solid var(--border); padding: 15px; 
+            overflow-y: auto; display: flex; flex-direction: column;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .panel h2 { 
+            color: var(--warning); border-bottom: 1px solid var(--border); 
+            padding-bottom: 8px; margin-bottom: 12px; font-size: 0.85rem; 
+            text-transform: uppercase; display: flex; align-items: center; gap: 10px;
+        }
+
+        /* Agents */
+        .agent-card { background: #111; border: 1px solid #222; padding: 12px; margin-bottom: 10px; font-size: 0.8rem; display: flex; gap: 12px; align-items: center; }
+        .agent-card.online { border-left: 4px solid #00ff41; background: rgba(0, 255, 65, 0.02); }
+        .agent-card.offline { border-left: 4px solid #ff0033; background: rgba(255, 0, 51, 0.02); }
+        .status-indicator { width: 10px; height: 10px; border-radius: 50%; margin-left: auto; }
+        .status-indicator.online { background: #00ff41; box-shadow: 0 0 8px #00ff41; }
+        .status-indicator.offline { background: #ff0033; box-shadow: 0 0 8px #ff0033; }
+        .agent-emoji { font-size: 1.8rem; }
+        .agent-id { font-weight: bold; color: #fff; display: flex; justify-content: space-between; align-items: center; width: 100%; }
+
+        /* Docs Mobile */
+        .docs-layout { grid-template-columns: 250px 1fr; gap: 20px; }
+        @media (max-width: 768px) {
+            .docs-layout { display: flex; flex-direction: column; }
+            .docs-list { border-right: none; border-bottom: 1px solid #222; padding-bottom: 15px; margin-bottom: 15px; }
+        }
+        .doc-viewer { padding: 15px; color: #ccc; line-height: 1.6; font-size: 0.85rem; background: #080808; border: 1px solid #222; min-height: 300px; }
+        .doc-viewer h1 { font-size: 1.2rem; }
+        .doc-viewer h2 { font-size: 1rem; }
+
+        /* Controls */
+        input, select, button { -webkit-appearance: none; border-radius: 0; }
+        button { padding: 12px !important; } /* Larger touch targets for mobile */
+
+        /* Logs */
+        .log-entry { font-size: 0.7rem; }
+        .log-time { min-width: 65px; }
+
+        /* Status Dot */
+        .status-badge { background: var(--accent); color: var(--primary); padding: 4px 10px; border: 1px solid var(--primary); font-size: 0.65rem; }
+        .live-dot { width: 6px; height: 6px; background: var(--error); border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .cursor { display: inline-block; width: 8px; height: 14px; background: var(--primary); animation: blink 1s infinite; vertical-align: middle; }
+
+        /* ── Messages Tab ────────────────────────────────────── */
+        .msg-tab-content { flex-direction: column; gap: 15px; }
+        .msg-tab-content.active { display: flex !important; }
+
+        .msg-toolbar {
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+            background: var(--panel); border: 1px solid var(--border); padding: 12px 15px;
+            backdrop-filter: blur(10px);
+        }
+        .msg-toolbar select, .msg-toolbar button {
+            background: #080808; border: 1px solid #333; color: var(--primary);
+            padding: 8px 12px; font-size: 0.75rem; font-family: 'Courier New', monospace;
+            cursor: pointer;
+        }
+        .msg-toolbar button:hover { border-color: var(--primary); box-shadow: var(--glow); }
+        .msg-toolbar .msg-count {
+            color: var(--warning); font-size: 0.75rem; font-weight: bold;
+            margin-left: auto; display: flex; align-items: center; gap: 8px;
+        }
+        .msg-countdown {
+            color: var(--dim); font-size: 0.65rem;
+            background: #111; border: 1px solid #222; padding: 2px 8px;
+        }
+
+        .msg-table-wrap {
+            background: var(--panel); border: 1px solid var(--border);
+            backdrop-filter: blur(10px); overflow-x: auto; flex: 1;
+        }
+        .msg-table {
+            width: 100%; border-collapse: collapse; font-size: 0.75rem;
+        }
+        .msg-table thead { position: sticky; top: 0; z-index: 2; }
+        .msg-table th {
+            background: #111; color: var(--warning); text-transform: uppercase;
+            font-size: 0.65rem; letter-spacing: 1px; padding: 10px 12px;
+            text-align: left; border-bottom: 2px solid var(--primary);
+            white-space: nowrap;
+        }
+        .msg-table td {
+            padding: 10px 12px; border-bottom: 1px solid #1a1a1a;
+            vertical-align: top;
+        }
+        .msg-table tr:hover { background: rgba(0, 255, 65, 0.03); }
+        .msg-table tr.priority-high { border-left: 3px solid var(--error); }
+        .msg-table tr.priority-normal { border-left: 3px solid #333; }
+
+        .msg-agent-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: #111; border: 1px solid #333; padding: 2px 8px;
+            font-size: 0.7rem; white-space: nowrap;
+        }
+        .msg-agent-badge.from { border-color: #00ff41; color: #00ff41; }
+        .msg-agent-badge.to { border-color: #0088ff; color: #0088ff; }
+
+        .msg-priority {
+            font-size: 0.6rem; font-weight: bold; text-transform: uppercase;
+            padding: 2px 8px; border: 1px solid;
+        }
+        .msg-priority.high { color: var(--error); border-color: var(--error); background: rgba(255,0,51,0.1); }
+        .msg-priority.normal { color: var(--dim); border-color: #333; }
+
+        .msg-status {
+            font-size: 0.6rem; font-weight: bold; text-transform: uppercase;
+            padding: 2px 8px; border: 1px solid;
+        }
+        .msg-status.pending { color: var(--warning); border-color: var(--warning); background: rgba(255,191,0,0.1); }
+        .msg-status.read { color: var(--primary); border-color: var(--primary); background: rgba(0,255,65,0.1); }
+
+        .msg-subject { color: #fff; font-weight: bold; }
+        .msg-content { color: #888; font-size: 0.7rem; margin-top: 3px; }
+        .msg-time { color: var(--dim); font-size: 0.65rem; white-space: nowrap; }
+
+        .msg-ack-btn {
+            background: var(--accent); color: var(--primary); border: 1px solid var(--primary);
+            padding: 4px 10px; font-size: 0.65rem; cursor: pointer; font-family: 'Courier New', monospace;
+            white-space: nowrap;
+        }
+        .msg-ack-btn:hover { box-shadow: var(--glow); }
+        .msg-ack-btn:disabled { opacity: 0.3; cursor: not-allowed; border-color: #333; color: #555; }
+
+        .msg-empty {
+            text-align: center; padding: 60px 20px; color: var(--dim); font-size: 0.85rem;
+        }
+        .msg-empty .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.3; }
+
+        .msg-spinner {
+            text-align: center; padding: 40px; color: var(--primary); font-size: 0.8rem;
+        }
+        .msg-spinner::after {
+            content: ''; display: inline-block; width: 16px; height: 16px;
+            border: 2px solid var(--primary); border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            margin-left: 8px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Message detail expand */
+        .msg-detail-row { display: none; }
+        .msg-detail-row.open { display: table-row; }
+        .msg-detail-cell {
+            background: #0a0a0a; padding: 15px 20px; color: #ccc;
+            font-size: 0.75rem; line-height: 1.6; border-bottom: 1px solid #222;
+        }
+        .msg-detail-meta { color: var(--dim); font-size: 0.65rem; margin-top: 8px; }
+
+        /* Flow visualization */
+        .msg-flow {
+            display: flex; align-items: center; gap: 6px; white-space: nowrap;
+        }
+        .msg-flow-arrow { color: var(--primary); font-size: 0.8rem; }
+        .msg-flow-arrow.high { color: var(--error); }
+
+        @media (max-width: 768px) {
+            .msg-toolbar { flex-direction: column; align-items: stretch; }
+            .msg-toolbar .msg-count { margin-left: 0; justify-content: center; }
+            .msg-table { font-size: 0.7rem; }
+            .msg-table th, .msg-table td { padding: 8px; }
+            .msg-hide-mobile { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <svg class="icon" viewBox="0 0 100 100" style="width:35px; height:35px; stroke:var(--primary); stroke-width:3; fill:none">
+                <path d="M50 10 L90 30 L90 70 L50 90 L10 70 L10 30 Z"/>
+                <circle cx="50" cy="50" r="15" fill="var(--primary)"/>
+            </svg>
+            <h1>MINIONS COMMAND <span class="cursor"></span></h1>
+        </div>
+        <div class="status-badge" id="system-status">
+            <div class="live-dot"></div>
+            UPLINK ACTIVE
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <button class="tab-btn active" onclick="showTab('tab-command', this)">[ COMMAND ]</button>
+        <button class="tab-btn" onclick="showTab('tab-messages', this)">[ MESSAGES ]</button>
+        <button class="tab-btn" onclick="showTab('tab-docs', this)">[ TASKS & DOCS ]</button>
+    </nav>
+
+    <!-- TAB 1: Main Dashboard -->
+    <div id="tab-command" class="tab-content active grid">
+        <div class="panel">
+            <h2>Neural Registry</h2>
+            <div id="agents-list">SYNCING...</div>
+        </div>
+
+        <div class="panel">
+            <h2>Core Intelligence</h2>
+            <div id="kb-list">SYNCING...</div>
+        </div>
+
+        <div class="panel">
+            <h2>Command Input</h2>
+            <div style="background:#000; border:1px solid #222; padding:12px; margin-bottom:15px;">
+                <input type="text" id="task-title" placeholder="Objective..." style="width:100%; margin-bottom:10px; background:#080808; border:1px solid #333; color:var(--primary); padding:10px;">
+                <select id="task-agent" style="width:100%; margin-bottom:10px; background:#080808; border:1px solid #333; color:var(--primary); padding:10px;">
+                    <option value="collaborator">Broadcast (All)</option>
+                    <option value="asmuni">Minion Asmuni</option>
+                    <option value="bob">Minion Bob</option>
+                    <option value="clo">Minion CLO</option>
+                    <option value="kartolo">Minion Kartolo</option>
+                    <option value="dono">Minion Dono</option>
+                </select>
+                <button onclick="createTask()" style="width:100%; background:var(--accent); color:var(--primary); border:1px solid var(--primary); padding:10px; cursor:pointer; font-weight:bold; font-size:0.8rem;">DEPLOY PROTOCOL</button>
+            </div>
+            <h2>Mission Status</h2>
+            <div id="tasks-list">LOADING...</div>
+        </div>
+
+        <div class="panel logs-panel">
+            <h2>Neural Event Stream</h2>
+            <div id="logs-list">CONNECTING...</div>
+        </div>
+
+        <div class="panel">
+            <h2>The Constitution</h2>
+            <div id="rules-list"></div>
+        </div>
+    </div>
+
+    <!-- TAB 2: Messages Monitor -->
+    <div id="tab-messages" class="tab-content msg-tab-content">
+        <div class="msg-toolbar">
+            <select id="msg-filter-agent" onchange="fetchMessages()">
+                <option value="">All Agents</option>
+            </select>
+            <select id="msg-filter-status" onchange="fetchMessages()">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="read">Read</option>
+            </select>
+            <select id="msg-filter-priority" onchange="fetchMessages()">
+                <option value="">All Priority</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+            </select>
+            <button onclick="fetchMessages()" title="Refresh now">REFRESH</button>
+            <div class="msg-count">
+                <span id="msg-total">0 MESSAGES</span>
+                <span class="msg-countdown" id="msg-countdown">10s</span>
+            </div>
+        </div>
+
+        <div class="msg-table-wrap">
+            <div id="msg-loading" class="msg-spinner">INTERCEPTING TRANSMISSIONS</div>
+            <table class="msg-table" id="msg-table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>Route</th>
+                        <th>Subject</th>
+                        <th class="msg-hide-mobile">Content</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Time (WIB)</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="msg-tbody"></tbody>
+            </table>
+            <div id="msg-empty" class="msg-empty" style="display:none;">
+                <div class="empty-icon">📡</div>
+                No transmissions intercepted.<br>
+                <span style="font-size:0.7rem; color:#333;">The communication bus is quiet.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: Documentation -->
+    <div id="tab-docs" class="tab-content docs-layout panel">
+        <div class="docs-list">
+            <h2>DOCUMENTS</h2>
+            <div id="docs-index">Loading...</div>
+        </div>
+        <div class="doc-viewer" id="doc-content">
+            <h1>Transmitting Data...</h1>
+            <p>Select a node from the index.</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        const EMOJIS = {
+            'clo': '👩',
+            'asmuni': '🤵',
+            'kartolo': '👨‍💻',
+            'bob': '👨‍🔬',
+            'dono': '💼',
+            'default': '🤖'
+        };
+
+        function showTab(id, btn) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            btn.classList.add('active');
+            if (id === 'tab-docs') fetchDocsList();
+        }
+
+        async function fetchState() {
+            try {
+                const [agentsRes, statsRes, tasksRes, kbRes, rulesRes] = await Promise.all([
+                    fetch(`${API_BASE}/agents`),
+                    fetch(`${API_BASE}/dashboard/stats`),
+                    fetch(`${API_BASE}/tasks`),
+                    fetch(`${API_BASE}/kb`),
+                    fetch(`${API_BASE}/rules`)
+                ]);
+
+                const agents = (await agentsRes.json()).agents;
+                const stats = await statsRes.json();
+                const tasks = (await tasksRes.json()).tasks;
+                const kb = (await kbRes.json()).entries;
+                const rules = (await rulesRes.json()).rules;
+
+                renderAgents(agents);
+                renderLogs(stats.recent_logs);
+                renderTasks(tasks);
+                renderKB(kb);
+                renderRules(rules);
+
+                document.getElementById('system-status').innerHTML = `<div class="live-dot"></div> ${new Date().toLocaleTimeString()}`;
+            } catch (e) {
+                document.getElementById('system-status').innerHTML = "OFFLINE";
+            }
+        }
+
+        function renderAgents(agents) {
+            document.getElementById('agents-list').innerHTML = agents.map(a => {
+                const seen = new Date(a.last_seen);
+                const isOnline = (new Date() - seen) < 120000;
+                
+                // Convert UTC to WIB (UTC+7)
+                const wibTime = new Date(seen.getTime() + 7 * 60 * 60 * 1000);
+                const wibStr = wibTime.toLocaleString('id-ID', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+                const emoji = EMOJIS[a.id.toLowerCase()] || EMOJIS['default'];
+                return `
+                    <div class="agent-card ${isOnline ? 'online' : 'offline'}">
+                        <div class="agent-emoji">${emoji}</div>
+                        <div class="agent-info" style="flex: 1;">
+                            <div class="agent-id">
+                                <span>${a.id.toUpperCase()}</span>
+                            </div>
+                            <div class="agent-subtitle" style="color:#888; font-size:0.7rem; margin:4px 0;">${a.subtitle || 'Minion'}</div>
+                            <div style="color:#666; font-size:0.65rem; margin-top:2px;">🕐 ${wibStr} WIB</div>
+                            <div class="agent-task">${a.current_task || 'IDLE'}</div>
+                        </div>
+                        <div class="status-indicator ${isOnline ? 'online' : 'offline'}"></div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderKB(entries) {
+            document.getElementById('kb-list').innerHTML = (entries || []).slice(0, 10).map(e => `
+                <div class="kb-item" style="border-bottom:1px solid #111; padding:8px 0;">
+                    <div style="color:var(--primary); font-size:0.8rem; font-weight:bold;"># ${e.subject}</div>
+                    <div style="color:#888; font-size:0.75rem;">${e.content.substring(0, 100)}...</div>
+                </div>
+            `).join('');
+        }
+
+        function renderTasks(tasks) {
+            document.getElementById('tasks-list').innerHTML = (tasks || []).slice(0, 10).map(t => `
+                <div class="task-item" style="padding:10px 0; border-bottom:1px solid #111; display:flex; justify-content:space-between;">
+                    <div style="font-size:0.8rem; color:#ccc;">${t.title} <span style="color:#444; font-size:0.6rem;">@${t.agent_id}</span></div>
+                    <span class="task-status status-${t.status}" onclick="cycleTask(${t.id}, '${t.status}')" style="cursor:pointer; font-size:0.6rem; padding:2px 5px; border:1px solid;">${t.status}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderLogs(logs) {
+            document.getElementById('logs-list').innerHTML = (logs || []).map(l => `
+                <div class="log-entry">
+                    <span class="log-time">[${new Date(l.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}]</span>
+                    <span class="log-level-${l.level}">[${l.level[0].toUpperCase()}]</span>
+                    <span style="color:#aaa;"><strong>${l.agent_id}:</strong> ${l.message}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderRules(rules) {
+            document.getElementById('rules-list').innerHTML = (rules || []).map(r => `
+                <div style="margin-bottom:8px;">
+                    <div style="color:#fff; font-size:0.75rem; font-weight:bold;">${r.title}</div>
+                    <div style="color:#666; font-size:0.7rem;">${r.content}</div>
+                </div>
+            `).join('');
+        }
+
+        async function fetchDocsList() {
+            const res = await fetch(`${API_BASE}/list-docs`);
+            const data = await res.json();
+            document.getElementById('docs-index').innerHTML = data.docs.map(f => `
+                <div class="doc-link" onclick="viewDoc('${f}')" style="padding:10px; border-bottom:1px solid #111; cursor:pointer; color:#aaa; font-size:0.8rem;">> ${f.replace('.md','').replace('_',' ')}</div>
+            `).join('');
+        }
+
+        async function viewDoc(filename) {
+            const res = await fetch(`${API_BASE}/get-doc/${filename}`);
+            const data = await res.json();
+            let html = data.content
+                .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+                .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+                .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+                .replace(/\*\*(.*)\*\*/g, '<strong>$1</strong>')
+                .replace(/`(.*)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+            document.getElementById('doc-content').innerHTML = html;
+            if (window.innerWidth <= 768) {
+                document.getElementById('doc-content').scrollIntoView({behavior: 'smooth'});
+            }
+        }
+
+        async function createTask() {
+            const title = document.getElementById('task-title').value;
+            const agent = document.getElementById('task-agent').value;
+            if (!title) return;
+            await fetch(`${API_BASE}/tasks`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({agent_id: agent, title: title, priority: 'high'})
+            });
+            document.getElementById('task-title').value = '';
+            fetchState();
+        }
+
+        async function cycleTask(id, currentStatus) {
+            const next = currentStatus === 'todo' ? 'in_progress' : (currentStatus === 'in_progress' ? 'done' : 'todo');
+            await fetch(`${API_BASE}/tasks/${id}?status=${next}`, {method: 'PATCH'});
+            fetchState();
+        }
+
+        setInterval(fetchState, 5000);
+        fetchState();
+
+        // ── Messages Tab ──────────────────────────────────────
+        let msgAutoTimer = null;
+        let msgCountdown = 10;
+        let msgCountdownTimer = null;
+        let allMessages = [];
+        let knownAgents = new Set();
+
+        function toWIB(utcStr) {
+            const d = new Date(utcStr);
+            return d.toLocaleString('id-ID', {
+                timeZone: 'Asia/Jakarta',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            }) + ' WIB';
+        }
+
+        function truncate(str, max) {
+            if (!str) return '';
+            return str.length > max ? str.substring(0, max) + '...' : str;
+        }
+
+        async function fetchMessages() {
+            const loading = document.getElementById('msg-loading');
+            const table = document.getElementById('msg-table');
+            const empty = document.getElementById('msg-empty');
+            const tbody = document.getElementById('msg-tbody');
+
+            loading.style.display = 'block';
+            table.style.display = 'none';
+            empty.style.display = 'none';
+
+            try {
+                const agentFilter = document.getElementById('msg-filter-agent').value;
+                const statusFilter = document.getElementById('msg-filter-status').value;
+                const priorityFilter = document.getElementById('msg-filter-priority').value;
+
+                let url = `${API_BASE}/messages?limit=100`;
+                const res = await fetch(url);
+                const data = await res.json();
+                allMessages = data.messages || [];
+
+                // Collect known agents for filter dropdown
+                allMessages.forEach(m => {
+                    knownAgents.add(m.from_agent);
+                    knownAgents.add(m.to_agent);
+                });
+                populateAgentFilter();
+
+                // Apply client-side filters
+                let filtered = allMessages;
+                if (agentFilter) {
+                    filtered = filtered.filter(m => m.from_agent === agentFilter || m.to_agent === agentFilter);
+                }
+                if (statusFilter) {
+                    filtered = filtered.filter(m => m.status === statusFilter);
+                }
+                if (priorityFilter) {
+                    filtered = filtered.filter(m => m.priority === priorityFilter);
+                }
+
+                document.getElementById('msg-total').textContent = `${filtered.length} MESSAGE${filtered.length !== 1 ? 'S' : ''}`;
+
+                loading.style.display = 'none';
+
+                if (filtered.length === 0) {
+                    empty.style.display = 'block';
+                    return;
+                }
+
+                table.style.display = 'table';
+                const emoji = (name) => EMOJIS[name.toLowerCase()] || EMOJIS['default'];
+
+                tbody.innerHTML = filtered.map(m => `
+                    <tr class="priority-${m.priority}" onclick="toggleDetail(${m.id})" style="cursor:pointer;">
+                        <td>
+                            <div class="msg-flow">
+                                <span class="msg-agent-badge from">${emoji(m.from_agent)} ${m.from_agent}</span>
+                                <span class="msg-flow-arrow ${m.priority}">→</span>
+                                <span class="msg-agent-badge to">${emoji(m.to_agent)} ${m.to_agent}</span>
+                            </div>
+                        </td>
+                        <td><span class="msg-subject">${m.subject || '—'}</span></td>
+                        <td class="msg-hide-mobile"><span class="msg-content">${truncate(m.content, 80)}</span></td>
+                        <td><span class="msg-priority ${m.priority}">${m.priority}</span></td>
+                        <td><span class="msg-status ${m.status}">${m.status}</span></td>
+                        <td><span class="msg-time">${toWIB(m.created_at)}</span></td>
+                        <td>
+                            <button class="msg-ack-btn" onclick="ackMessage(event, ${m.id})" ${m.status === 'read' ? 'disabled' : ''}>
+                                ${m.status === 'read' ? '✓ READ' : 'MARK READ'}
+                            </button>
+                        </td>
+                    </tr>
+                    <tr class="msg-detail-row" id="msg-detail-${m.id}">
+                        <td colspan="7" class="msg-detail-cell">
+                            <strong>Full Content:</strong><br>${m.content || '(empty)'}
+                            <div class="msg-detail-meta">
+                                ID: ${m.id} | Created: ${toWIB(m.created_at)}${m.read_at ? ' | Read: ' + toWIB(m.read_at) : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch (e) {
+                loading.style.display = 'none';
+                empty.style.display = 'block';
+                document.querySelector('#msg-empty .empty-icon').textContent = '⚠';
+                document.getElementById('msg-empty').innerHTML = `
+                    <div class="empty-icon">⚠</div>
+                    Failed to fetch messages.<br>
+                    <span style="font-size:0.7rem; color:#333;">${e.message}</span>
+                `;
+            }
+
+            resetCountdown();
+        }
+
+        function populateAgentFilter() {
+            const sel = document.getElementById('msg-filter-agent');
+            const current = sel.value;
+            const sorted = [...knownAgents].sort();
+            // Only rebuild if agents changed
+            if (sel.options.length - 1 !== sorted.length) {
+                sel.innerHTML = '<option value="">All Agents</option>' +
+                    sorted.map(a => `<option value="${a}" ${a === current ? 'selected' : ''}>${a}</option>`).join('');
+            }
+        }
+
+        function toggleDetail(id) {
+            const row = document.getElementById(`msg-detail-${id}`);
+            if (row) row.classList.toggle('open');
+        }
+
+        async function ackMessage(event, id) {
+            event.stopPropagation();
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                await fetch(`${API_BASE}/messages/${id}/ack`, { method: 'POST' });
+                btn.textContent = '✓ READ';
+                // Update status badge in same row
+                const row = btn.closest('tr');
+                const statusEl = row.querySelector('.msg-status');
+                if (statusEl) {
+                    statusEl.className = 'msg-status read';
+                    statusEl.textContent = 'read';
+                }
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'RETRY';
+            }
+        }
+
+        function resetCountdown() {
+            msgCountdown = 10;
+            document.getElementById('msg-countdown').textContent = '10s';
+        }
+
+        function startMsgAutoRefresh() {
+            if (msgAutoTimer) return;
+            fetchMessages();
+            msgCountdownTimer = setInterval(() => {
+                msgCountdown--;
+                if (msgCountdown <= 0) {
+                    fetchMessages();
+                    msgCountdown = 10;
+                }
+                document.getElementById('msg-countdown').textContent = `${msgCountdown}s`;
+            }, 1000);
+        }
+
+        function stopMsgAutoRefresh() {
+            clearInterval(msgCountdownTimer);
+            msgCountdownTimer = null;
+            msgAutoTimer = null;
+        }
+
+        // Start/stop auto-refresh when Messages tab is toggled
+        const origShowTab = showTab;
+        showTab = function(id, btn) {
+            origShowTab(id, btn);
+            if (id === 'tab-messages') {
+                startMsgAutoRefresh();
+            } else {
+                stopMsgAutoRefresh();
+            }
+        };
+    </script>
+</body>
+</html>
