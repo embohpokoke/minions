@@ -1,13 +1,16 @@
 """
-Minions API v2.2 — OpenClaw Live Command Center
-Upgraded for Document Serving & Tabbed UI Support
+Minions API v2.3 — OpenClaw Live Command Center
+Migrated to PostgreSQL (psycopg2)
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, UTC
+import zoneinfo
+WIB = zoneinfo.ZoneInfo("Asia/Jakarta")
 from typing import Optional, List
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import json
 import os
 import logging
@@ -15,7 +18,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("minions")
 
-app = FastAPI(title="Minions Command Center", version="2.2.0")
+app = FastAPI(title="Minions Command Center", version="2.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "/root/embohpokoke.my.id/minions/data/minions.db"
+DB_URL = "postgresql://livin:L1v1n!B1nt4r0_2026@172.17.0.2:5432/livininbintaro"
 DOCS_DIR = "/root/embohpokoke.my.id/minions/docs"
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -66,20 +69,19 @@ class KnowledgeEntry(BaseModel):
 
 # ── Database ──────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DB_URL, options='-c search_path=minions')
     return conn
 
 def now_iso():
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(WIB).isoformat()
 
 # ── Endpoints ─────────────────────────────────────────────────────────────
 @app.get("/dashboard/stats")
 def get_dashboard_stats():
     conn = get_db()
-    c = conn.cursor()
-    five_mins_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
-    c.execute("SELECT COUNT(*) as cnt FROM agents WHERE last_seen > ?", (five_mins_ago,))
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    five_mins_ago = (datetime.now(WIB) - timedelta(minutes=5)).isoformat()
+    c.execute("SELECT COUNT(*) as cnt FROM agents WHERE last_seen > %s", (five_mins_ago,))
     active_agents = c.fetchone()["cnt"]
     c.execute("SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status")
     task_stats = {r["status"]: r["cnt"] for r in c.fetchall()}
@@ -94,12 +96,12 @@ def heartbeat(data: AgentHeartbeat):
     c = conn.cursor()
     c.execute('''
         INSERT INTO agents (id, host, status, last_seen, current_task, rule_version_ack, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            host = excluded.host, status = excluded.status, last_seen = excluded.last_seen,
-            current_task = excluded.current_task, rule_version_ack = excluded.rule_version_ack,
-            metadata = excluded.metadata
-    ''', (data.agent_id, data.host, data.status, now_iso(), 
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (id) DO UPDATE SET
+            host = EXCLUDED.host, status = EXCLUDED.status, last_seen = EXCLUDED.last_seen,
+            current_task = EXCLUDED.current_task, rule_version_ack = EXCLUDED.rule_version_ack,
+            metadata = EXCLUDED.metadata
+    ''', (data.agent_id, data.host, data.status, now_iso(),
           data.current_task, data.rule_version_ack, json.dumps(data.metadata)))
     conn.commit()
     conn.close()
@@ -108,8 +110,8 @@ def heartbeat(data: AgentHeartbeat):
 @app.get("/agents")
 def list_agents():
     conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM agents ORDER BY display_order ASC, last_seen DESC")
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT * FROM agents ORDER BY display_order ASC NULLS LAST, last_seen DESC")
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return {"agents": rows}
@@ -117,8 +119,8 @@ def list_agents():
 @app.get("/rules")
 def get_rules():
     conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM rules WHERE is_active = 1 ORDER BY id DESC")
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT * FROM rules WHERE is_active = TRUE ORDER BY id DESC")
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return {"rules": rows}
@@ -127,9 +129,9 @@ def get_rules():
 def add_rule(rule: RuleEntry):
     conn = get_db()
     c = conn.cursor()
-    version = datetime.utcnow().strftime("%Y%m%d%H%M")
+    version = datetime.now(WIB).strftime("%Y%m%d%H%M")
     c.execute('''INSERT INTO rules (title, content, category, version, is_active, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?)''', 
+                 VALUES (%s, %s, %s, %s, %s, %s)''',
               (rule.title, rule.content, rule.category, version, rule.is_active, now_iso()))
     conn.commit()
     conn.close()
@@ -138,32 +140,48 @@ def add_rule(rule: RuleEntry):
 @app.get("/kb")
 def list_knowledge(limit: int = 50, agent_id: Optional[str] = None):
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=RealDictCursor)
     if agent_id:
-        c.execute("SELECT * FROM knowledge WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?", (agent_id, limit))
+        c.execute("SELECT * FROM knowledge WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s", (agent_id, limit))
     else:
-        c.execute("SELECT * FROM knowledge ORDER BY created_at DESC LIMIT ?", (limit,))
+        c.execute("SELECT * FROM knowledge ORDER BY created_at DESC LIMIT %s", (limit,))
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return {"entries": rows}
+
+@app.get("/kb/search")
+def search_knowledge(q: str = "", limit: int = 50):
+    conn = get_db()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    if q:
+        search = f"%{q}%"
+        c.execute('''SELECT * FROM knowledge
+                     WHERE subject ILIKE %s OR content ILIKE %s OR tags ILIKE %s
+                     ORDER BY created_at DESC LIMIT %s''',
+                  (search, search, search, limit))
+    else:
+        c.execute("SELECT * FROM knowledge ORDER BY created_at DESC LIMIT %s", (limit,))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return {"entries": rows, "count": len(rows)}
 
 @app.post("/kb")
 def create_knowledge(entry: KnowledgeEntry):
     conn = get_db()
     c = conn.cursor()
     c.execute('''INSERT INTO knowledge (agent_id, subject, content, tags, metadata, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                 VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id''',
               (entry.agent_id, entry.subject, entry.content,
                json.dumps(entry.tags), json.dumps(entry.metadata), now_iso(), now_iso()))
+    new_id = c.fetchone()[0]
     conn.commit()
-    new_id = c.lastrowid
     conn.close()
     return {"status": "created", "id": new_id}
 
 @app.get("/tasks")
 def list_tasks():
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=RealDictCursor)
     c.execute("SELECT * FROM tasks ORDER BY updated_at DESC")
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
@@ -174,8 +192,8 @@ def create_task(task: TaskEntry):
     conn = get_db()
     c = conn.cursor()
     c.execute('''INSERT INTO tasks (agent_id, title, description, status, priority, tags, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-              (task.agent_id, task.title, task.description, task.status, 
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
+              (task.agent_id, task.title, task.description, task.status,
                task.priority, json.dumps(task.tags), now_iso(), now_iso()))
     conn.commit()
     conn.close()
@@ -185,7 +203,7 @@ def create_task(task: TaskEntry):
 def update_task(task_id: int, status: str):
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", (status, now_iso(), task_id))
+    c.execute("UPDATE tasks SET status = %s, updated_at = %s WHERE id = %s", (status, now_iso(), task_id))
     conn.commit()
     conn.close()
     return {"status": "updated"}
@@ -207,7 +225,7 @@ def get_doc(filename: str):
 def push_log(log: LogEntry):
     conn = get_db()
     c = conn.cursor()
-    c.execute("INSERT INTO logs (agent_id, level, message, context, timestamp) VALUES (?, ?, ?, ?, ?)",
+    c.execute("INSERT INTO logs (agent_id, level, message, context, timestamp) VALUES (%s, %s, %s, %s, %s)",
               (log.agent_id, log.level, log.message, json.dumps(log.context), now_iso()))
     conn.commit()
     conn.close()
@@ -228,12 +246,11 @@ def send_message(msg: MessageEntry):
     c = conn.cursor()
     c.execute('''
         INSERT INTO messages (from_agent, to_agent, subject, content, priority, created_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
+        VALUES (%s, %s, %s, %s, %s, %s, 'pending') RETURNING id
     ''', (msg.from_agent, msg.to_agent, msg.subject, msg.content, msg.priority, now_iso()))
+    msg_id = c.fetchone()[0]
     conn.commit()
-    msg_id = c.lastrowid
     conn.close()
-    
     logger.info(f"[MSG] {msg.from_agent} → {msg.to_agent} (priority: {msg.priority})")
     return {"message_id": msg_id, "status": "sent"}
 
@@ -241,10 +258,10 @@ def send_message(msg: MessageEntry):
 def get_messages(agent_id: str, status: str = "pending"):
     """Get messages for specific agent"""
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=RealDictCursor)
     c.execute('''
         SELECT * FROM messages
-        WHERE to_agent = ? AND status = ?
+        WHERE to_agent = %s AND status = %s
         ORDER BY created_at DESC
     ''', (agent_id, status))
     messages = [dict(r) for r in c.fetchall()]
@@ -256,7 +273,7 @@ def ack_message(msg_id: int):
     """Mark message as read/acknowledged"""
     conn = get_db()
     c = conn.cursor()
-    c.execute('UPDATE messages SET status = "read", read_at = ? WHERE id = ?', (now_iso(), msg_id))
+    c.execute("UPDATE messages SET status = 'read', read_at = %s WHERE id = %s", (now_iso(), msg_id))
     conn.commit()
     conn.close()
     return {"message_id": msg_id, "status": "acknowledged"}
@@ -265,8 +282,8 @@ def ack_message(msg_id: int):
 def list_all_messages(limit: int = 100):
     """List all messages (for Erik dashboard)"""
     conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?', (limit,))
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute('SELECT * FROM messages ORDER BY created_at DESC LIMIT %s', (limit,))
     messages = [dict(r) for r in c.fetchall()]
     conn.close()
     return {"messages": messages, "total": len(messages)}
